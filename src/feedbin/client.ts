@@ -1,4 +1,4 @@
-import type { FeedbinCredentials, FeedbinTagging } from "./types";
+import type { FeedbinCredentials, FeedbinEntry, FeedbinTagging } from "./types";
 
 export interface FeedbinClientOptions {
   credentials: FeedbinCredentials;
@@ -50,5 +50,17 @@ export class FeedbinClient {
 
   async getTaggings(): Promise<FeedbinTagging[]> {
     return this.getJson<FeedbinTagging[]>("/taggings.json");
+  }
+
+  async getEntriesByIds(ids: number[]): Promise<FeedbinEntry[]> {
+    const out: FeedbinEntry[] = [];
+    for (let i = 0; i < ids.length; i += 100) {
+      const batch = ids.slice(i, i + 100);
+      const entries = await this.getJson<FeedbinEntry[]>(
+        `/entries.json?ids=${batch.join(",")}`,
+      );
+      out.push(...entries);
+    }
+    return out;
   }
 }
