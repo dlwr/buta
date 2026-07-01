@@ -15,7 +15,10 @@ export class FeedbinClient {
 
   constructor(opts: FeedbinClientOptions) {
     this.baseUrl = opts.baseUrl ?? DEFAULT_BASE_URL;
-    this.fetchFn = opts.fetchFn ?? fetch;
+    // The global fetch is `this`-sensitive: calling it as a method
+    // (this.fetchFn(...)) triggers "Illegal invocation" in the Workers
+    // runtime. Bind it to globalThis so the default path is safe.
+    this.fetchFn = opts.fetchFn ?? globalThis.fetch.bind(globalThis);
     this.authHeader =
       "Basic " + btoa(`${opts.credentials.email}:${opts.credentials.password}`);
   }
