@@ -1,0 +1,14 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "buta",
+  "main": "src/index.ts",
+  "compatibility_date": "2024-12-30",
+  "compatibility_flags": ["nodejs_compat"],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "buta", "database_id": "REPLACE_AFTER_CREATE" }
+  ],
+  "kv_namespaces": [
+    { "binding": "SYNC_KV", "id": "REPLACE_AFTER_CREATE" }
+  ]
+}
