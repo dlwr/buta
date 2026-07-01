@@ -36,15 +36,26 @@ export async function upsertEntries(
   )));
 }
 
+// D1/SQLite caps bound parameters per statement (~100), so a single
+// `IN (?,?,...)` over thousands of ids fails with "too many SQL variables".
+// Chunk the id list and run the reset + set as one atomic batch, so a
+// failure never leaves every row reset to 0.
+const FLAG_ID_CHUNK = 90;
+
 async function setFlagFromIds(
   db: D1Database, column: "is_unread" | "is_starred", ids: number[],
 ): Promise<void> {
-  await db.prepare(`UPDATE entries SET ${column} = 0`).run();
-  if (ids.length === 0) return;
-  const placeholders = ids.map(() => "?").join(",");
-  await db.prepare(
-    `UPDATE entries SET ${column} = 1 WHERE id IN (${placeholders})`,
-  ).bind(...ids).run();
+  const statements: D1PreparedStatement[] = [
+    db.prepare(`UPDATE entries SET ${column} = 0`),
+  ];
+  for (let i = 0; i < ids.length; i += FLAG_ID_CHUNK) {
+    const chunk = ids.slice(i, i + FLAG_ID_CHUNK);
+    const placeholders = chunk.map(() => "?").join(",");
+    statements.push(
+      db.prepare(`UPDATE entries SET ${column} = 1 WHERE id IN (${placeholders})`).bind(...chunk),
+    );
+  }
+  await db.batch(statements);
 }
 
 export async function setUnreadFlags(db: D1Database, unreadIds: number[]): Promise<void> {
