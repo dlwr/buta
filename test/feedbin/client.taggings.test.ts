@@ -3,7 +3,7 @@ import { FeedbinClient } from "../../src/feedbin/client";
 
 describe("FeedbinClient.getTaggings", () => {
   it("returns taggings", async () => {
-    const fetchFn = vi.fn(async () => new Response(JSON.stringify([
+    const fetchFn = vi.fn(async (_url: string) => new Response(JSON.stringify([
       { id: 4, feed_id: 1, name: "Core" },
       { id: 5, feed_id: 2, name: "News" },
     ]), { status: 200, headers: { "content-type": "application/json" } }));

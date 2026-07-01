@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import { FeedbinClient } from "../../src/feedbin/client";
 
 function jsonFetch(body: unknown) {
-  return vi.fn(async () => new Response(JSON.stringify(body), {
+  return vi.fn(async (_url: string) => new Response(JSON.stringify(body), {
     status: 200,
     headers: { "content-type": "application/json" },
   }));
