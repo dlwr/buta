@@ -31,4 +31,20 @@ export class FeedbinClient {
     const res = await this.get("/authentication.json");
     return res.status === 200;
   }
+
+  private async getJson<T>(path: string): Promise<T> {
+    const res = await this.get(path);
+    if (!res.ok) {
+      throw new Error(`Feedbin GET ${path} failed: ${res.status}`);
+    }
+    return (await res.json()) as T;
+  }
+
+  async getUnreadEntryIds(): Promise<number[]> {
+    return this.getJson<number[]>("/unread_entries.json");
+  }
+
+  async getStarredEntryIds(): Promise<number[]> {
+    return this.getJson<number[]>("/starred_entries.json");
+  }
 }
