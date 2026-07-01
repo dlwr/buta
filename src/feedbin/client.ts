@@ -1,4 +1,4 @@
-import type { FeedbinCredentials } from "./types";
+import type { FeedbinCredentials, FeedbinTagging } from "./types";
 
 export interface FeedbinClientOptions {
   credentials: FeedbinCredentials;
@@ -46,5 +46,9 @@ export class FeedbinClient {
 
   async getStarredEntryIds(): Promise<number[]> {
     return this.getJson<number[]>("/starred_entries.json");
+  }
+
+  async getTaggings(): Promise<FeedbinTagging[]> {
+    return this.getJson<FeedbinTagging[]>("/taggings.json");
   }
 }
