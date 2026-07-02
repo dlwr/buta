@@ -77,3 +77,21 @@ export async function getFeedLastSurfaced(db: D1Database): Promise<Map<number, s
   ).all<{ feed_id: number; last_surfaced: string }>();
   return new Map(results.map((r) => [r.feed_id, r.last_surfaced]));
 }
+
+export async function getUnreadForSelection(
+  db: D1Database,
+): Promise<{ id: number; feed_id: number; title: string | null; url: string | null; created_at: string | null }[]> {
+  const { results } = await db.prepare(
+    "SELECT id, feed_id, title, url, created_at FROM entries WHERE is_unread = 1",
+  ).all<{ id: number; feed_id: number; title: string | null; url: string | null; created_at: string | null }>();
+  return results;
+}
+
+export async function getAllTaggings(
+  db: D1Database,
+): Promise<{ feed_id: number; name: string }[]> {
+  const { results } = await db.prepare(
+    "SELECT feed_id, name FROM taggings",
+  ).all<{ feed_id: number; name: string }>();
+  return results;
+}

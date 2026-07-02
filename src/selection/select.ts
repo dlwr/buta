@@ -89,3 +89,27 @@ export function selectTier2(
   }
   return out;
 }
+
+export interface Selection {
+  tier1: SelectionEntry[];
+  tier2: SelectionEntry[];
+}
+
+export const DEFAULT_SELECTION_CONFIG: SelectionConfig = {
+  coreTags: ["Must Read"],
+  tailBudget: 30,
+  perFeedCap: 3,
+};
+
+export function buildSelection(
+  entries: SelectionEntry[],
+  taggings: { feed_id: number; name: string }[],
+  lastSurfaced: Map<number, string>,
+  cfg: SelectionConfig,
+): Selection {
+  const tierMap = buildFeedTierMap(taggings, cfg.coreTags);
+  return {
+    tier1: selectTier1(entries, tierMap),
+    tier2: selectTier2(entries, tierMap, lastSurfaced, cfg),
+  };
+}
