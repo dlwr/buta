@@ -2,6 +2,7 @@ import { FeedbinClient } from "./feedbin/client";
 import {
   initSchema, getUnreadForSelection, getAllTaggings, getFeedLastSurfaced,
   markEntriesReadLocal, getFeedIdsForEntries, touchFeedLastSurfaced,
+  setEntriesStarredLocal,
 } from "./db/queries";
 import { syncAll } from "./sync/sync";
 import { buildSelection, DEFAULT_SELECTION_CONFIG } from "./selection/select";
@@ -67,6 +68,34 @@ export default {
       const feeds = await getFeedIdsForEntries(env.DB, confirmed);
       await touchFeedLastSurfaced(env.DB, [...feeds], new Date().toISOString());
       return Response.json({ read: confirmed.length, feedsTouched: feeds.size });
+    }
+
+    if (request.method === "POST" && url.pathname === "/star") {
+      if (!isAuthorized(request, env.ADMIN_TOKEN)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const body = (await request.json().catch(() => null)) as
+        { entryIds?: unknown; starred?: unknown } | null;
+      const entryIds = body?.entryIds;
+      const starred = body?.starred;
+      if (!Array.isArray(entryIds) || entryIds.some((x) => typeof x !== "number")
+        || typeof starred !== "boolean") {
+        return new Response("Bad Request", { status: 400 });
+      }
+      if (entryIds.length === 0) return Response.json({ updated: 0 });
+
+      let confirmed: number[];
+      try {
+        const client = makeFeedbinClient(env);
+        confirmed = starred
+          ? await client.starEntries(entryIds as number[])
+          : await client.unstarEntries(entryIds as number[]);
+      } catch {
+        return new Response("Feedbin write failed", { status: 502 });
+      }
+
+      await setEntriesStarredLocal(env.DB, confirmed, starred);
+      return Response.json({ updated: confirmed.length });
     }
 
     return new Response("Not Found", { status: 404 });
