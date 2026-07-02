@@ -19,7 +19,7 @@ export default {
     }
 
     if (request.method === "POST" && url.pathname === "/admin/sync") {
-      if (request.headers.get("Authorization") !== `Bearer ${env.ADMIN_TOKEN}`) {
+      if (!isAuthorized(request, env.ADMIN_TOKEN)) {
         return new Response("Unauthorized", { status: 401 });
       }
       const result = await runSync(env);
@@ -34,6 +34,22 @@ export default {
     console.log("sync complete", result);
   },
 } satisfies ExportedHandler<Env>;
+
+// Constant-time string compare to avoid leaking the token via response timing.
+function timingSafeEqual(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+
+function isAuthorized(request: Request, token: string | undefined): boolean {
+  // Fail closed: with no secret configured, deny all (never allow "Bearer undefined").
+  if (!token) return false;
+  const header = request.headers.get("Authorization");
+  if (!header) return false;
+  return timingSafeEqual(header, `Bearer ${token}`);
+}
 
 async function runSync(env: Env) {
   await initSchema(env.DB);

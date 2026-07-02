@@ -24,4 +24,15 @@ describe("POST /admin/sync auth", () => {
     );
     expect(res.status).toBe(401);
   });
+
+  it("fails closed when ADMIN_TOKEN is not configured (no 'Bearer undefined' bypass)", async () => {
+    const { ADMIN_TOKEN: _omit, ...envNoToken } = baseEnv;
+    const res = await worker.fetch(
+      new Request("https://buta.example/admin/sync", {
+        method: "POST", headers: { Authorization: "Bearer undefined" },
+      }),
+      envNoToken as never, {} as never,
+    );
+    expect(res.status).toBe(401);
+  });
 });
