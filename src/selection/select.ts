@@ -35,3 +35,57 @@ export function selectTier1(
     .filter((e) => tierMap.get(e.feed_id) === 1)
     .sort(cmpCreatedDesc);
 }
+
+export interface SelectionConfig {
+  coreTags: string[];
+  tailBudget: number;
+  perFeedCap: number;
+}
+
+export function selectTier2(
+  entries: SelectionEntry[],
+  tierMap: Map<number, 1 | 2>,
+  lastSurfaced: Map<number, string>,
+  cfg: SelectionConfig,
+): SelectionEntry[] {
+  // (1) group Tier 2 entries by feed; newest-first; cap per feed
+  const byFeed = new Map<number, SelectionEntry[]>();
+  for (const e of entries) {
+    if ((tierMap.get(e.feed_id) ?? 2) !== 2) continue;
+    const list = byFeed.get(e.feed_id);
+    if (list) list.push(e);
+    else byFeed.set(e.feed_id, [e]);
+  }
+  for (const [feed, list] of byFeed) {
+    list.sort(cmpCreatedDesc);
+    byFeed.set(feed, list.slice(0, cfg.perFeedCap));
+  }
+
+  // (2) order feeds: oldest last_surfaced first (never-surfaced first),
+  //     tie-break by freshest item desc
+  const feeds = [...byFeed.keys()].sort((a, b) => {
+    const la = lastSurfaced.get(a);
+    const lb = lastSurfaced.get(b);
+    if (la !== lb) {
+      if (la === undefined) return -1;
+      if (lb === undefined) return 1;
+      return la < lb ? -1 : 1;
+    }
+    return cmpCreatedDesc(byFeed.get(a)![0]!, byFeed.get(b)![0]!);
+  });
+
+  // (3) breadth-first round-robin until budget
+  const out: SelectionEntry[] = [];
+  let pass = 0;
+  while (out.length < cfg.tailBudget && feeds.some((f) => byFeed.get(f)!.length > pass)) {
+    for (const f of feeds) {
+      const items = byFeed.get(f)!;
+      if (pass < items.length) {
+        out.push(items[pass]!);
+        if (out.length >= cfg.tailBudget) break;
+      }
+    }
+    pass++;
+  }
+  return out;
+}
