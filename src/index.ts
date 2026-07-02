@@ -1,6 +1,9 @@
 import { FeedbinClient } from "./feedbin/client";
-import { initSchema } from "./db/queries";
+import {
+  initSchema, getUnreadForSelection, getAllTaggings, getFeedLastSurfaced,
+} from "./db/queries";
 import { syncAll } from "./sync/sync";
+import { buildSelection, DEFAULT_SELECTION_CONFIG } from "./selection/select";
 
 export interface Env {
   DB: D1Database;
@@ -16,6 +19,16 @@ export default {
 
     if (request.method === "GET" && url.pathname === "/health") {
       return Response.json({ ok: true });
+    }
+
+    if (request.method === "GET" && url.pathname === "/feed") {
+      const [entries, taggings, lastSurfaced] = await Promise.all([
+        getUnreadForSelection(env.DB),
+        getAllTaggings(env.DB),
+        getFeedLastSurfaced(env.DB),
+      ]);
+      const selection = buildSelection(entries, taggings, lastSurfaced, DEFAULT_SELECTION_CONFIG);
+      return Response.json(selection);
     }
 
     if (request.method === "POST" && url.pathname === "/admin/sync") {
