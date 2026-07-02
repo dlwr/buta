@@ -8,6 +8,7 @@ export default defineWorkersConfig({
         miniflare: {
           d1Databases: ["DB"],
           kvNamespaces: ["SYNC_KV"],
+          bindings: { ADMIN_TOKEN: "test-token" },
         },
       },
     },

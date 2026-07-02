@@ -22,6 +22,9 @@ export default {
     }
 
     if (request.method === "GET" && url.pathname === "/feed") {
+      if (!isAuthorized(request, env.ADMIN_TOKEN)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
       const [entries, taggings, lastSurfaced] = await Promise.all([
         getUnreadForSelection(env.DB),
         getAllTaggings(env.DB),

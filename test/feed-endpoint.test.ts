@@ -16,9 +16,19 @@ beforeEach(async () => {
 });
 
 describe("GET /feed", () => {
-  it("returns tier1 and tier2 from the D1 mirror", async () => {
+  it("401 without a valid token", async () => {
     const res = await worker.fetch(
       new Request("https://buta.example/feed"),
+      env as never, {} as never,
+    );
+    expect(res.status).toBe(401);
+  });
+
+  it("returns tier1 and tier2 from the D1 mirror when authorized", async () => {
+    const res = await worker.fetch(
+      new Request("https://buta.example/feed", {
+        headers: { Authorization: "Bearer test-token" },
+      }),
       env as never, {} as never,
     );
     expect(res.status).toBe(200);
