@@ -5,7 +5,7 @@ import {
   setEntriesStarredLocal,
 } from "./db/queries";
 import { syncAll } from "./sync/sync";
-import { buildSelection, DEFAULT_SELECTION_CONFIG } from "./selection/select";
+import { buildSelection, buildFeedTierMap, DEFAULT_SELECTION_CONFIG } from "./selection/select";
 
 export interface Env {
   DB: D1Database;
@@ -96,6 +96,39 @@ export default {
 
       await setEntriesStarredLocal(env.DB, confirmed, starred);
       return Response.json({ updated: confirmed.length });
+    }
+
+    if (request.method === "POST" && url.pathname === "/cleanup") {
+      if (!isAuthorized(request, env.ADMIN_TOKEN)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const body = (await request.json().catch(() => null)) as
+        { olderThanDays?: unknown } | null;
+      const days = body?.olderThanDays;
+      if (typeof days !== "number" || !Number.isFinite(days) || days <= 0) {
+        return new Response("Bad Request", { status: 400 });
+      }
+      const cutoff = new Date(Date.now() - days * 86_400_000).toISOString();
+
+      const [entries, taggings] = await Promise.all([
+        getUnreadForSelection(env.DB),
+        getAllTaggings(env.DB),
+      ]);
+      const tierMap = buildFeedTierMap(taggings, DEFAULT_SELECTION_CONFIG.coreTags);
+      const targets = entries
+        .filter((e) => (tierMap.get(e.feed_id) ?? 2) === 2)
+        .filter((e) => (e.created_at ?? "") < cutoff)
+        .map((e) => e.id);
+      if (targets.length === 0) return Response.json({ read: 0 });
+
+      let confirmed: number[];
+      try {
+        confirmed = await makeFeedbinClient(env).markEntriesRead(targets);
+      } catch {
+        return new Response("Feedbin write failed", { status: 502 });
+      }
+      await markEntriesReadLocal(env.DB, confirmed);
+      return Response.json({ read: confirmed.length });
     }
 
     return new Response("Not Found", { status: 404 });
