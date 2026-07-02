@@ -66,4 +66,35 @@ export class FeedbinClient {
     }
     return out;
   }
+
+  private async writeIds(
+    method: "POST" | "DELETE", path: string, key: string, ids: number[],
+  ): Promise<number[]> {
+    const out: number[] = [];
+    for (let i = 0; i < ids.length; i += 1000) {
+      const chunk = ids.slice(i, i + 1000);
+      const res = await this.fetchFn(`${this.baseUrl}${path}`, {
+        method,
+        headers: { Authorization: this.authHeader, "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: chunk }),
+      });
+      if (!res.ok) {
+        throw new Error(`Feedbin ${method} ${path} failed: ${res.status}`);
+      }
+      out.push(...((await res.json()) as number[]));
+    }
+    return out;
+  }
+
+  async markEntriesRead(ids: number[]): Promise<number[]> {
+    return this.writeIds("DELETE", "/unread_entries.json", "unread_entries", ids);
+  }
+
+  async starEntries(ids: number[]): Promise<number[]> {
+    return this.writeIds("POST", "/starred_entries.json", "starred_entries", ids);
+  }
+
+  async unstarEntries(ids: number[]): Promise<number[]> {
+    return this.writeIds("DELETE", "/starred_entries.json", "starred_entries", ids);
+  }
 }
