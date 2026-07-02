@@ -21,3 +21,17 @@ export function buildFeedTierMap(
   }
   return map;
 }
+
+function cmpCreatedDesc(a: SelectionEntry, b: SelectionEntry): number {
+  const av = a.created_at ?? "";
+  const bv = b.created_at ?? "";
+  return av < bv ? 1 : av > bv ? -1 : 0;
+}
+
+export function selectTier1(
+  entries: SelectionEntry[], tierMap: Map<number, 1 | 2>,
+): SelectionEntry[] {
+  return entries
+    .filter((e) => tierMap.get(e.feed_id) === 1)
+    .sort(cmpCreatedDesc);
+}
