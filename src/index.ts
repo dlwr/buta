@@ -1,6 +1,7 @@
 import { FeedbinClient } from "./feedbin/client";
 import {
   initSchema, getUnreadForSelection, getAllTaggings, getFeedLastSurfaced,
+  markEntriesReadLocal, getFeedIdsForEntries, touchFeedLastSurfaced,
 } from "./db/queries";
 import { syncAll } from "./sync/sync";
 import { buildSelection, DEFAULT_SELECTION_CONFIG } from "./selection/select";
@@ -42,6 +43,32 @@ export default {
       return Response.json(result);
     }
 
+    if (request.method === "POST" && url.pathname === "/viewed") {
+      if (!isAuthorized(request, env.ADMIN_TOKEN)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const body = (await request.json().catch(() => null)) as { entryIds?: unknown } | null;
+      const entryIds = body?.entryIds;
+      if (!Array.isArray(entryIds) || entryIds.some((x) => typeof x !== "number")) {
+        return new Response("Bad Request", { status: 400 });
+      }
+      if (entryIds.length === 0) {
+        return Response.json({ read: 0, feedsTouched: 0 });
+      }
+
+      let confirmed: number[];
+      try {
+        confirmed = await makeFeedbinClient(env).markEntriesRead(entryIds as number[]);
+      } catch {
+        return new Response("Feedbin write failed", { status: 502 });
+      }
+
+      await markEntriesReadLocal(env.DB, confirmed);
+      const feeds = await getFeedIdsForEntries(env.DB, confirmed);
+      await touchFeedLastSurfaced(env.DB, [...feeds], new Date().toISOString());
+      return Response.json({ read: confirmed.length, feedsTouched: feeds.size });
+    }
+
     return new Response("Not Found", { status: 404 });
   },
 
@@ -67,11 +94,15 @@ function isAuthorized(request: Request, token: string | undefined): boolean {
   return timingSafeEqual(header, `Bearer ${token}`);
 }
 
-async function runSync(env: Env) {
-  await initSchema(env.DB);
-  const client = new FeedbinClient({
+function makeFeedbinClient(env: Env): FeedbinClient {
+  return new FeedbinClient({
     credentials: { email: env.FEEDBIN_EMAIL, password: env.FEEDBIN_PASSWORD },
   });
+}
+
+async function runSync(env: Env) {
+  await initSchema(env.DB);
+  const client = makeFeedbinClient(env);
   return syncAll({
     db: env.DB,
     kv: env.SYNC_KV,
