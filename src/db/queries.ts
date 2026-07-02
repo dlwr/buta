@@ -95,3 +95,54 @@ export async function getAllTaggings(
   ).all<{ feed_id: number; name: string }>();
   return results;
 }
+
+function chunkIds(ids: number[]): number[][] {
+  const out: number[][] = [];
+  for (let i = 0; i < ids.length; i += FLAG_ID_CHUNK) out.push(ids.slice(i, i + FLAG_ID_CHUNK));
+  return out;
+}
+
+export async function markEntriesReadLocal(db: D1Database, ids: number[]): Promise<void> {
+  if (ids.length === 0) return;
+  await db.batch(chunkIds(ids).map((chunk) =>
+    db.prepare(
+      `UPDATE entries SET is_unread = 0 WHERE id IN (${chunk.map(() => "?").join(",")})`,
+    ).bind(...chunk),
+  ));
+}
+
+export async function setEntriesStarredLocal(
+  db: D1Database, ids: number[], starred: boolean,
+): Promise<void> {
+  if (ids.length === 0) return;
+  const v = starred ? 1 : 0;
+  await db.batch(chunkIds(ids).map((chunk) =>
+    db.prepare(
+      `UPDATE entries SET is_starred = ${v} WHERE id IN (${chunk.map(() => "?").join(",")})`,
+    ).bind(...chunk),
+  ));
+}
+
+export async function getFeedIdsForEntries(
+  db: D1Database, ids: number[],
+): Promise<Set<number>> {
+  const feeds = new Set<number>();
+  for (const chunk of chunkIds(ids)) {
+    const { results } = await db.prepare(
+      `SELECT DISTINCT feed_id FROM entries WHERE id IN (${chunk.map(() => "?").join(",")})`,
+    ).bind(...chunk).all<{ feed_id: number }>();
+    for (const r of results) feeds.add(r.feed_id);
+  }
+  return feeds;
+}
+
+export async function touchFeedLastSurfaced(
+  db: D1Database, feedIds: number[], when: string,
+): Promise<void> {
+  if (feedIds.length === 0) return;
+  const stmt = db.prepare(
+    `INSERT INTO feed_state (feed_id, last_surfaced) VALUES (?, ?)
+     ON CONFLICT(feed_id) DO UPDATE SET last_surfaced = excluded.last_surfaced`,
+  );
+  await db.batch(feedIds.map((f) => stmt.bind(f, when)));
+}
