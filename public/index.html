@@ -1,1 +1,84 @@
-<!doctype html><meta charset="utf-8"><title>buta</title><p>buta</p>
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#FAF7F5">
+<link rel="manifest" href="/manifest.json">
+<title>buta</title>
+<style>
+:root {
+  --bg: #FAF7F5; --fg: #23201E; --muted: #8A817C; --accent: #C4526B;
+  --hairline: #E4DDD8;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #1B171B; --fg: #E8E2DE; --muted: #8B8188; --accent: #E27A93; --hairline: #322B31; }
+}
+* { box-sizing: border-box; }
+html { background: var(--bg); }
+body {
+  margin: 0 auto; max-width: 44rem; padding: 0 0.75rem 40vh;
+  font-family: system-ui, sans-serif; color: var(--fg);
+  font-size: 15px; line-height: 1.4;
+}
+header {
+  display: flex; align-items: baseline; gap: 0.75rem;
+  padding: 0.6rem 0; border-bottom: 1px solid var(--hairline);
+  position: sticky; top: 0; background: var(--bg); z-index: 1;
+}
+header h1 { font-size: 1rem; margin: 0; letter-spacing: 0.04em; }
+header .spacer { flex: 1; }
+header button {
+  font: inherit; font-size: 0.8rem; color: var(--muted);
+  background: none; border: 1px solid var(--hairline); border-radius: 4px;
+  padding: 0.15rem 0.6rem; cursor: pointer;
+}
+header button:hover { color: var(--fg); }
+#list { margin: 0; padding: 0; list-style: none; }
+.row {
+  display: flex; gap: 0.6rem; align-items: baseline;
+  padding: 0.45rem 0.5rem 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--hairline);
+  border-left: 3px solid transparent;
+}
+.row.cursor { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.row.read { opacity: 0.38; }
+.row .title { flex: 1; min-width: 0; cursor: pointer; }
+.row .meta {
+  font-family: ui-monospace, monospace; font-size: 0.7rem;
+  color: var(--muted); white-space: nowrap;
+}
+.row .star {
+  cursor: pointer; color: var(--hairline); background: none; border: none;
+  font: inherit; padding: 0 0.2rem;
+}
+.row .star.on { color: var(--accent); }
+.seam {
+  display: flex; align-items: center; gap: 0.75rem;
+  margin: 1.1rem 0; color: var(--accent);
+  font-family: ui-monospace, monospace; font-size: 0.72rem; letter-spacing: 0.08em;
+}
+.seam::before, .seam::after { content: ""; flex: 1; border-top: 1px solid var(--accent); opacity: 0.45; }
+#end { text-align: center; padding: 2rem 0; }
+#end button {
+  font: inherit; color: var(--bg); background: var(--accent);
+  border: none; border-radius: 6px; padding: 0.5rem 1.2rem; cursor: pointer;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: no-preference) {
+  .row { transition: opacity 0.4s ease; }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>buta</h1>
+  <div class="spacer"></div>
+  <button id="cleanup">掃除</button>
+  <button id="reload">更新</button>
+</header>
+<ul id="list"></ul>
+<div id="end" hidden><button id="next">次の尾を回す</button></div>
+<script src="/app.js"></script>
+</body>
+</html>
