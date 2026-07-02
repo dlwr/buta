@@ -21,4 +21,8 @@ export const SCHEMA_STATEMENTS: string[] = [
    )`,
   `CREATE INDEX IF NOT EXISTS idx_entries_feed ON entries(feed_id)`,
   `CREATE INDEX IF NOT EXISTS idx_entries_unread ON entries(is_unread)`,
+  `CREATE TABLE IF NOT EXISTS feed_state (
+     feed_id INTEGER PRIMARY KEY,
+     last_surfaced TEXT
+   )`,
 ];

@@ -70,3 +70,10 @@ export async function getTrackedEntryIds(db: D1Database): Promise<Set<number>> {
   const { results } = await db.prepare("SELECT id FROM entries").all<{ id: number }>();
   return new Set(results.map((r) => r.id));
 }
+
+export async function getFeedLastSurfaced(db: D1Database): Promise<Map<number, string>> {
+  const { results } = await db.prepare(
+    "SELECT feed_id, last_surfaced FROM feed_state WHERE last_surfaced IS NOT NULL",
+  ).all<{ feed_id: number; last_surfaced: string }>();
+  return new Map(results.map((r) => [r.feed_id, r.last_surfaced]));
+}
