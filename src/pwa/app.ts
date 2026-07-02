@@ -86,7 +86,7 @@ function makeRow(entry: Entry): HTMLLIElement {
     const summary = document.createElement("div");
     summary.className = "summary";
     summary.textContent = plain;
-    summary.addEventListener("click", () => openRow(li));
+    summary.addEventListener("click", () => void openReader(li));
     li.append(summary);
   }
 
@@ -136,14 +136,65 @@ function setCursor(i: number): void {
   markViewed(row); // moving the cursor onto a row counts as seeing it
 }
 
+function readerOpen(): boolean {
+  return !document.getElementById("reader")!.hidden;
+}
+
+async function openReader(row: HTMLLIElement): Promise<void> {
+  markViewed(row);
+  const overlay = document.getElementById("reader")!;
+  const titleEl = document.getElementById("reader-title") as HTMLAnchorElement;
+  const metaEl = document.getElementById("reader-meta")!;
+  const body = document.getElementById("reader-body")!;
+  overlay.hidden = false;
+  titleEl.textContent = "…";
+  titleEl.removeAttribute("href");
+  metaEl.textContent = "";
+  body.textContent = "";
+  try {
+    const res = await api(`/entry/${row.dataset["id"]}`);
+    if (!res.ok) throw new Error(String(res.status));
+    const e = (await res.json()) as {
+      title: string | null; url: string | null;
+      content: string | null; summary: string | null; created_at: string | null;
+    };
+    titleEl.textContent = e.title || "(no title)";
+    if (e.url) titleEl.href = e.url;
+    metaEl.textContent = fmtDate(e.created_at);
+    if (e.content) {
+      body.innerHTML = e.content; // sanitized server-side (HTMLRewriter)
+    } else {
+      body.textContent = e.summary || "本文なし。タイトルから原文を開く。";
+    }
+    overlay.scrollTop = 0;
+  } catch {
+    body.textContent = "読み込みに失敗した。";
+  }
+}
+
+function closeReader(): void {
+  document.getElementById("reader")!.hidden = true;
+}
+
+document.getElementById("reader-close")!.addEventListener("click", closeReader);
+
 document.addEventListener("keydown", (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  if (e.key === "j") setCursor(cursor + 1);
-  else if (e.key === "k") setCursor(cursor - 1);
-  else if (e.key === "s" && rows[cursor]) {
+  if (e.key === "Escape" && readerOpen()) { closeReader(); return; }
+  if (e.key === "o") {
+    if (readerOpen()) closeReader();
+    else if (rows[cursor]) void openReader(rows[cursor]!);
+    return;
+  }
+  if (e.key === "j" || e.key === "k") {
+    setCursor(cursor + (e.key === "j" ? 1 : -1));
+    if (readerOpen() && rows[cursor]) void openReader(rows[cursor]!);
+    return;
+  }
+  if (e.key === "s" && rows[cursor]) {
     const btn = rows[cursor]!.querySelector<HTMLButtonElement>(".star")!;
     void toggleStar(rows[cursor]!, btn);
-  } else if ((e.key === "o" || e.key === "Enter") && rows[cursor]) {
+  } else if (e.key === "Enter" && rows[cursor]) {
     openRow(rows[cursor]!);
   }
 });
