@@ -4,5 +4,6 @@ declare module "cloudflare:test" {
     SYNC_KV: KVNamespace;
     FEEDBIN_EMAIL: string;
     FEEDBIN_PASSWORD: string;
+    ADMIN_TOKEN: string;
   }
 }
