@@ -2,8 +2,9 @@ import { FeedbinClient } from "./feedbin/client";
 import {
   initSchema, getUnreadForSelection, getAllTaggings, getFeedLastSurfaced,
   markEntriesReadLocal, getFeedIdsForEntries, touchFeedLastSurfaced,
-  setEntriesStarredLocal,
+  setEntriesStarredLocal, getEntryById,
 } from "./db/queries";
+import { sanitizeHtml } from "./sanitize";
 import { syncAll } from "./sync/sync";
 import { buildSelection, buildFeedTierMap, DEFAULT_SELECTION_CONFIG } from "./selection/select";
 
@@ -34,6 +35,17 @@ export default {
       ]);
       const selection = buildSelection(entries, taggings, lastSurfaced, DEFAULT_SELECTION_CONFIG);
       return Response.json(selection);
+    }
+
+    const entryMatch = url.pathname.match(/^\/entry\/(\d+)$/);
+    if (request.method === "GET" && entryMatch) {
+      if (!isAuthorized(request, env.ADMIN_TOKEN)) {
+        return new Response("Unauthorized", { status: 401 });
+      }
+      const entry = await getEntryById(env.DB, Number(entryMatch[1]));
+      if (!entry) return new Response("Not Found", { status: 404 });
+      const content = entry.content ? await sanitizeHtml(entry.content) : null;
+      return Response.json({ ...entry, content });
     }
 
     if (request.method === "POST" && url.pathname === "/admin/sync") {

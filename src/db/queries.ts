@@ -96,6 +96,22 @@ export async function getAllTaggings(
   return results;
 }
 
+export interface EntryDetail {
+  id: number;
+  feed_id: number;
+  title: string | null;
+  url: string | null;
+  content: string | null;
+  summary: string | null;
+  created_at: string | null;
+}
+
+export async function getEntryById(db: D1Database, id: number): Promise<EntryDetail | null> {
+  return db.prepare(
+    "SELECT id, feed_id, title, url, content, summary, created_at FROM entries WHERE id = ?",
+  ).bind(id).first<EntryDetail>();
+}
+
 function chunkIds(ids: number[]): number[][] {
   const out: number[][] = [];
   for (let i = 0; i < ids.length; i += FLAG_ID_CHUNK) out.push(ids.slice(i, i + FLAG_ID_CHUNK));
