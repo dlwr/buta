@@ -3,6 +3,7 @@ export interface SelectionEntry {
   feed_id: number;
   title: string | null;
   url: string | null;
+  summary?: string | null;
   created_at: string | null;
 }
 

@@ -10,8 +10,8 @@ beforeEach(async () => {
   await env.DB.batch([
     env.DB.prepare("INSERT INTO taggings (id, feed_id, name) VALUES (1, 1, 'Must Read')"),
     env.DB.prepare("INSERT INTO taggings (id, feed_id, name) VALUES (2, 2, 'Blog')"),
-    env.DB.prepare("INSERT INTO entries (id, feed_id, title, url, created_at, is_unread, synced_at) VALUES (1, 1, 'core', null, '2026-07-01T09:00:00Z', 1, 't')"),
-    env.DB.prepare("INSERT INTO entries (id, feed_id, title, url, created_at, is_unread, synced_at) VALUES (2, 2, 'tail', null, '2026-07-01T08:00:00Z', 1, 't')"),
+    env.DB.prepare("INSERT INTO entries (id, feed_id, title, url, summary, created_at, is_unread, synced_at) VALUES (1, 1, 'core', null, 'コア要約', '2026-07-01T09:00:00Z', 1, 't')"),
+    env.DB.prepare("INSERT INTO entries (id, feed_id, title, url, summary, created_at, is_unread, synced_at) VALUES (2, 2, 'tail', null, '尾要約', '2026-07-01T08:00:00Z', 1, 't')"),
   ]);
 });
 
@@ -32,8 +32,13 @@ describe("GET /feed", () => {
       env as never, {} as never,
     );
     expect(res.status).toBe(200);
-    const body = await res.json() as { tier1: { id: number }[]; tier2: { id: number }[] };
+    const body = await res.json() as {
+      tier1: { id: number; summary: string | null }[];
+      tier2: { id: number; summary: string | null }[];
+    };
     expect(body.tier1.map((x) => x.id)).toEqual([1]);
     expect(body.tier2.map((x) => x.id)).toEqual([2]);
+    expect(body.tier1[0]!.summary).toBe("コア要約");
+    expect(body.tier2[0]!.summary).toBe("尾要約");
   });
 });

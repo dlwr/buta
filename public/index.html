@@ -36,10 +36,16 @@ header button {
 header button:hover { color: var(--fg); }
 #list { margin: 0; padding: 0; list-style: none; }
 .row {
-  display: flex; gap: 0.6rem; align-items: baseline;
   padding: 0.45rem 0.5rem 0.45rem 0.65rem;
   border-bottom: 1px solid var(--hairline);
   border-left: 3px solid transparent;
+}
+.row .top { display: flex; gap: 0.6rem; align-items: baseline; }
+.row .summary {
+  margin-top: 0.15rem; font-size: 0.78rem; color: var(--muted);
+  overflow: hidden; display: -webkit-box;
+  -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  cursor: pointer;
 }
 .row.cursor { border-left-color: var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .row.read { opacity: 0.38; }

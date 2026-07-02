@@ -2,7 +2,7 @@ import { ViewedBuffer } from "./viewed-buffer";
 
 interface Entry {
   id: number; feed_id: number; title: string | null;
-  url: string | null; created_at: string | null;
+  url: string | null; summary: string | null; created_at: string | null;
 }
 interface Selection { tier1: Entry[]; tier2: Entry[] }
 
@@ -60,6 +60,9 @@ function makeRow(entry: Entry): HTMLLIElement {
   li.dataset["id"] = String(entry.id);
   li.dataset["url"] = entry.url ?? "";
 
+  const top = document.createElement("div");
+  top.className = "top";
+
   const title = document.createElement("span");
   title.className = "title";
   title.textContent = entry.title || "(no title)";
@@ -75,7 +78,18 @@ function makeRow(entry: Entry): HTMLLIElement {
   star.setAttribute("aria-label", "star");
   star.addEventListener("click", () => void toggleStar(li, star));
 
-  li.append(title, meta, star);
+  top.append(title, meta, star);
+  li.append(top);
+
+  const plain = (entry.summary ?? "").replace(/<[^>]*>/g, "").trim();
+  if (plain) {
+    const summary = document.createElement("div");
+    summary.className = "summary";
+    summary.textContent = plain;
+    summary.addEventListener("click", () => openRow(li));
+    li.append(summary);
+  }
+
   observer.observe(li);
   return li;
 }

@@ -80,10 +80,10 @@ export async function getFeedLastSurfaced(db: D1Database): Promise<Map<number, s
 
 export async function getUnreadForSelection(
   db: D1Database,
-): Promise<{ id: number; feed_id: number; title: string | null; url: string | null; created_at: string | null }[]> {
+): Promise<{ id: number; feed_id: number; title: string | null; url: string | null; summary: string | null; created_at: string | null }[]> {
   const { results } = await db.prepare(
-    "SELECT id, feed_id, title, url, created_at FROM entries WHERE is_unread = 1",
-  ).all<{ id: number; feed_id: number; title: string | null; url: string | null; created_at: string | null }>();
+    "SELECT id, feed_id, title, url, summary, created_at FROM entries WHERE is_unread = 1",
+  ).all<{ id: number; feed_id: number; title: string | null; url: string | null; summary: string | null; created_at: string | null }>();
   return results;
 }
 
