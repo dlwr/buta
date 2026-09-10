@@ -4,8 +4,9 @@ import { isBasicAuthorized, unauthorized } from "./api/auth";
 import { dispatch, type Route } from "./api/router";
 import { miscRoutes } from "./api/misc";
 import { entryRoutes } from "./api/entries";
+import { markRoutes } from "./api/marks";
 
-const apiRoutes: Route[] = [...miscRoutes, ...entryRoutes];
+const apiRoutes: Route[] = [...miscRoutes, ...entryRoutes, ...markRoutes];
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
