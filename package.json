@@ -24,5 +24,8 @@
       "@cloudflare/workerd-darwin-arm64",
       "@cloudflare/workerd-darwin-64"
     ]
+  },
+  "dependencies": {
+    "feedsmith": "^2.9.6"
   }
 }
