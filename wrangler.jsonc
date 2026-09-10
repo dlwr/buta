@@ -4,10 +4,15 @@
   "main": "src/index.ts",
   "compatibility_date": "2024-12-30",
   "compatibility_flags": ["nodejs_compat"],
-  "triggers": { "crons": ["*/5 * * * *"] },
+  "triggers": { "crons": ["*/15 * * * *"] },
   "assets": { "directory": "./public" },
   "d1_databases": [
-    { "binding": "DB", "database_name": "buta", "database_id": "6be75ad1-6f5f-4e5a-ae67-c9fa466eb3c5" }
+    {
+      "binding": "DB",
+      "database_name": "buta",
+      "database_id": "6be75ad1-6f5f-4e5a-ae67-c9fa466eb3c5",
+      "migrations_dir": "migrations"
+    }
   ],
   "kv_namespaces": [
     { "binding": "SYNC_KV", "id": "d843c36e58f64d8fb0001ebe492aa0e2" }
