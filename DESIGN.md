@@ -1,158 +1,94 @@
 # buta — 設計メモ
 
-自分専用の RSS トリアージツール。Feedbin をバックエンドに、Android と Mac で使う。
-
-このドキュメントは設計の共有理解を記録したもの。定数の多くは仮置きで、実データでのチューニング前提。
+自分専用の RSS バックエンド。フィードを自前でクロールし、Feedbin API v2 互換を喋る。クライアントは既製のリーダー（Android: Capy Reader、Mac: NetNewsWire / Reeder）。
 
 ---
 
-## 動機と北極星
+## 動機
 
-- **動機**: 既製品（NetNewsWire / Reeder / Readrops）に無い「自分専用の最適化」。読む体験ではなく **選別（トリアージ）** が穴。読む体験は既製品が既に解けているので作らない。
-- **北極星**: **500+/日の流入を、コアは取りこぼさず・長い尾は枯らさず提示するトリアージ**。未読は自動で捨てない。見なかった尾は未読のまま残り、いつか浮上する。
-- 前提: 1日の流入 500+ 件。「全部それなりに興味あるが多すぎる」＝ゴミ除去ではなく **量と提示順** の問題。
-- **改訂（重要）**: 当初は「時間切れで末尾を一括破棄」を核にしていたが、ユーザーは **未読の自動破棄を許容しない**。サンプリングは「捨てる仕組み」ではなく **「今回どれを前に出すか＝提示順」の仕組み**。未読プールは「決して失わない安全網」で、全部読む前提はない。掃除は**ユーザーが手動で**行う（自動には絶対しない）。
+- 当初は Feedbin を真実の源に、その上にトリアージ層を重ねる構成だった。D1 の全行 UPDATE を 5 分毎に回す実装で行課金が月 $170 規模になり停止。
+- 読む体験は既製リーダーが解けている。自前で持つ価値があるのは **保存とクロールと選別のロジック**。そこで Feedbin を置き換え、既製リーダーが接続できる互換 API を提供する形にピボットした（2026-09）。
+- コスト目標: Workers Paid $5/月、超過ゼロ。Feedbin の $5 が消えるので実質差し引きゼロ。
 
 ---
 
 ## アーキテクチャ
 
 ```
-Feedbin (真実の源: フィード / 未読 / スター / タグ)
-   ↑↓ Basic認証・資格情報はサーバー側に隔離
-Cloudflare Worker (BFF + 選別エンジン)
-   - Feedbin を Cron で同期 (entries + unread + taggings, since 付き)
-   - entry 本文をキャッシュ、Tier 判定 + 尾の多様性サンプリング + exact-match dedup
-   - ランク済み・ハイドレート済みリストを配信 / 既読・スターを代理書き込み
-   ↑↓ 単一ユーザートークン, CORS は Worker が制御
-PWA (Cloudflare Pages, TypeScript) — 表示とトリアージ操作だけの薄いクライアント
+フィード (RSS / Atom / RDF / JSON Feed)
+   ↓ 15 分毎 cron、条件付き GET、並列 20
+Cloudflare Worker
+   - crawl: feedsmith で正規化 → D1 entries に INSERT OR IGNORE → unread_entries に追加
+   - /v2/*: Feedbin API v2 互換（Basic 認証、単一ユーザー）
+   - /admin/*: OPML 取り込み、手動クロール、旧データ引き継ぎ（Bearer）
+   ↓
+既製リーダー（Capy Reader / NetNewsWire / Reeder）が Feedbin アカウントとして接続
 ```
 
-- **Feedbin が状態の真実の源**。Worker はその上にスコア/Tier/サンプリングを重ねる派生層。
-- PWA は Feedbin を直接叩かない（Basic 認証・CORS の都合で BFF は実質強制）。
+- D1 が真実の源。KV は cron の多重実行ロックだけ。
+- 全行 UPDATE / DELETE は書かない。既読・スターは独立テーブルへの id 指定の追加・削除のみ。
 
 ---
 
-## 選別ロジック = 二層モデル（この設計の核・差別化点）
+## データモデル（migrations/0001_init.sql）
 
-既製品に無いのはここ。二層 + 多様性サンプリング + アンチスタベーションが差別化の本体。
-
-- **Tier 1（コア必読）**: `Must Read` フォルダのフィード。**全件を時系列で提示**。クリアする受信箱（ここは実際に既読にしていく）。実データで未読 28 件と手頃なサイズ。
-- **Tier 2（長い尾）**: 残りのフォルダ。**1フィード上限 + 多様性サンプリング + アンチスタベーション**（久しく浮上していないフィードを持ち上げる）で薄く提示。**サンプリングは提示順であって破棄ではない**——出さなかった尾は未読のまま残り、アンチスタベーションで再浮上する。保証されるのは **フィード単位の公平性**（どのフィードも暗転しない）で、個々のアイテムを全部読める保証ではない。
-- Tier とフィード重みは **Feedbin の taggings（フォルダ/タグ）から自動生成**、後で手で微調整。
-- 時間減衰は Tier 1 内の並びと Tier 2 のアンチスタベーションに使う。重みが時系列に潰れないよう配分する。
-- **exact-match dedup**（同一 URL / 正規化タイトル）だけ MVP に入れる。ファジー/類似度は主敵でないので入れない。
-- **学習ランキングは後付け**。行動データ（既読/スター履歴）が貯まってから、尾の再ランクに導入（Vectorize 等）。
-
-### Tier 2 の仮置き定数（実測でチューニング）
-
-- **幅優先＝原則 1 フィード 1 件**で 30 フィードに広げる（多様性の勝ちはこれに依存）。バースト時のみ 1 フィード最大 **3 件**まで。
-- 尾の総枠: **30 件 / セッション**
-- アンチスタベーション: **最終浮上が古いフィードを優先**（feed 単位で `last_surfaced` を持ち、古い順に枠を割る）
-
-回転周期 ≒ アクティブフィード数 ÷ セッション予算（278÷30≒10 セッション）。予算がチューニングノブ。
-
-### 状態モデル（C を採用）
-
-- **2 状態のみ（未読 / 既読）**。Feedbin と同じ。第3状態は持たない。
-- **`last_surfaced` は"実際にスクロール通過した時"に前進**（＝自動既読の信号と同一経路）。単に候補に選ばれただけでは前進しない。
-- よって「提示したが到達しなかった」見出しは**未読のまま、次回そのフィードが再び対象**になり同じ最新未読を再オファー（まだ見ていないので正しい）。通過した分だけ既読化＋当該フィードの `last_surfaced` 前進。
-- スクロール通過＝既読の書き戻し（→Feedbin `DELETE unread_entries`）と `last_surfaced` 更新は**同じクライアント→Worker のビュー報告**で行う（この書き戻し経路は BFF プラン＝plan 3）。
-
-### スパイク検証結果（実データ 2371 未読 / 278 尾フィード）
-
-throwaway スパイクで本実装前に仮説を検証済み（`scratchpad/spike*.py`、コードは破棄）：
-
-- **多様性**: サンプル30件は **30 の異なるフィード**にまたがる。素の時系列トップ30は **12 フィード**しかなく、Soccer/Game/Trend の高頻度フィードに 22/30 を占領される。→ サンプリングの勝ち。
-- **アンチスタベーション**: セッション反復シミュで、last_surfaced 優先なら **10 セッションで全 278 フィードを巡回**（以降サイクル）。素朴なフレッシュ順は 14 セッションでも **48%** しか出ず半分が永久に埋もれる。→ アンチスタベーションが要で、機能する。
-- **Tier 1 = Must Read** はそのまま Tier 1 に使える（未読 28 件、一貫した内容）。
+- `feeds`: 購読 = フィード（Feedbin の subscription.id と feed_id は同じ値）。ETag / Last-Modified / 失敗回数を持つ。
+- `entries`: `UNIQUE(feed_id, dedup_key)`。dedup_key は guid → url → `title|published` の順。`published` は非 null（無ければクロール時刻）。
+- `unread_entries` / `starred_entries`: entry_id だけの集合。
+- `taggings`: フォルダ。`UNIQUE(feed_id, name)`。
+- 削除は feeds → entries → marks に CASCADE。entries は自動では消さない（未読の自動破棄禁止は継続）。
 
 ---
 
-## トリアージ UX
+## クロール
 
-- 主戦場は **見出しリスト**。密なリストで title + summary をスキャン、開くのは一握り。
-- **スクロール自動既読を既定の高速動線** + j/k・スワイプで明示的に既読/スター（両立）。ただし自動既読は **提示された（＝目を通した）分だけ**。出していない尾は既読にしない。
-- **尾の一括破棄はしない**。代わりに **ユーザーが明示操作する掃除の逃避ボタン**のみ（例: 「N日以上前を既読に」）。自動には絶対しない。
-- 未読カウントは膨張する前提なので、**カウントで急かす UI にしない**（数字を主役にしない／非表示も検討）。
-- 「読む」は当面 **原文をブラウザで開く**。
-- **online-first**（オフライン耐性は当面なし）。
+- cron `*/15`。KV `crawl_lock`（TTL 10 分）で多重実行を防ぐ。
+- 全フィードを並列 20 で回す。ETag / Last-Modified を送り 304 ならパースしない。
+- 失敗は `error_count` を増やし、`min(error_count, 8) × 15 分` の間スキップ。成功でリセット。
+- 見積もり（300 フィード）: 読 150 万行/日、書 3 万行/日。Paid 込み枠（250 億読 / 5000 万書 / 月）の 1% 未満。
 
 ---
 
-## スコープ
+## Feedbin API 互換範囲
 
-### MVP
-- BFF + Feedbin 同期
-- 二層選別（Tier 1=Must Read 全件 / Tier 2=多様性サンプリング + アンチスタベーション）
-- exact-match dedup
-- 見出しトリアージ（提示分のみ自動既読 + 明示操作、**尾は捨てない**）
-- 手動掃除の逃避ボタン（「N日以上前を既読に」等、自動なし）
-- 原文はブラウザで開く
-- スター/保存は記録だけしておく（Phase 2 の学習の餌）
+Capy Reader のソースで確認した使用エンドポイントを実装。
 
-### Phase 2
-- 記事リーダーモード（Feedbin の `content` を表示、自前抽出なし）
-- 尾の学習再ランク
-- Tier 1 新着通知
+- `GET authentication.json`、`GET icons.json`（[]）、`GET saved_searches.json`（[]）、`POST pages.json`（501）
+- `GET entries.json?page&since&per_page&ids&read=false&starred=true`、`GET feeds/:id/entries.json`、`GET entries/:id.json`
+- `GET/POST/DELETE unread_entries.json`、`POST unread_entries/delete.json`（starred も同様）
+- `GET/POST subscriptions.json`、`GET/PATCH/DELETE subscriptions/:id.json`
+- `GET/POST taggings.json`、`GET/DELETE taggings/:id.json`、`POST/DELETE tags.json`
 
-### 非目標
-- 自前の全文抽出
-- offline-first
-- 独自バックエンド（Feedbin を維持）
+クライアントの癖:
+- ページングは `Links` ヘッダ `<url>; rel="next", <url>; rel="last"`。Capy は `", "` と `"; "` で分割し各 URL の `?page=` を読むので、URL は必ず page を含み `,` を含まない。
+- `Entry.published` / `created_at` は非 null 必須。`extracted_content_url` は null（本文抽出はフェーズ2）。
+- `POST taggings.json` の `feed_id` は文字列で来る。
+- `DELETE unread_entries.json` はボディ付き DELETE。
 
 ---
 
-## 機構的な決定（Worker の裁量、変更あれば上書き）
+## 運用
 
-| 項目 | 決定 | 理由 |
-|---|---|---|
-| PWA↔Feedbin | 直接会話しない（BFF） | Basic 認証・CORS の都合で実質強制 |
-| 同期 | Worker の Cron Trigger で数分毎、`since` + 条件付きで差分取得 | レート/転送を最小化 |
-| 認証 | 単一ユーザー、Worker に 1 トークン（Feedbin 資格は Secret） | 個人ツール、最小 |
-| ストレージ | entry 本文/スコア/Tier/最終浮上時刻 = D1、同期カーソル等 = KV | 関係データは D1、単純値は KV |
-| retention | **未読は捨てず保持**（安全網）。掃除は read 済みのみ対象＋ユーザー手動。大規模時は尾の未提示 entry の本文を持たず on-demand 取得も検討 | 未読プールは単調増加を許容。D1 10GB 上限が長期の制約 |
-| 通知 | MVP では無し（Tier 1 新着通知は Phase 2） | 北極星に非必須 |
-| スタック | TypeScript / Hono on Workers / Pages（PWA） | 既存スタック |
+- シークレット: `API_EMAIL` / `API_PASSWORD`（リーダーに入れる Basic 認証）、`ADMIN_TOKEN`（/admin）。
+- 移行: Feedbin の OPML → `POST /admin/opml` → `POST /admin/crawl` → `POST /admin/migrate-legacy`（旧 `legacy_entries` と URL 照合して既読・スターを引き継ぐ）。
+- テスト: `@cloudflare/vitest-pool-workers` で D1 に migrations を適用して実 SQL を叩く。
 
 ---
 
-## 検証済み Feedbin API 事実
+## フェーズ2（未着手）
 
-`feedbin/feedbin-api` で確認済み。
+### トリアージの仮想タグ化
 
-- 認証は **HTTP Basic 認証**（email:password）。→ ブラウザに資格情報を置けない = BFF 必須。
-- `GET /v2/entries.json`: ページング付き、`created_at` 降順、`summary` と `content` を含む。→ 見出しトリアージは Feedbin の要約でそのまま成立、自前抽出不要。
-- `GET /v2/unread_entries.json`: entry_id の配列。既読化は `DELETE /v2/unread_entries.json`（最大 1000 id をまとめて）。
-- `GET /v2/entries.json?ids=...`: 本文取得は 100 件ずつ。→ Worker が本文をキャッシュして PWA にまとめて配信。
-- `GET /v2/taggings.json`: feed_id → タグ名。→ フォルダ/タグから Tier と初期重みを自動生成。
-- starred も同型（GET で id 配列、POST/DELETE で更新）。
+旧設計の核だった二層モデルを、リーダーに見える **仮想フォルダ** として復活させる。
 
----
+- **Tier 1（コア必読）**: `Must Read` フォルダは全件時系列。これは既製リーダーのフォルダそのままで足りる。
+- **Tier 2（長い尾）**: 残りのフォルダから 1 フィード 1 件（バースト時最大 3 件）、30 件/セッションを **多様性サンプリング + アンチスタベーション**（feed 単位の `last_surfaced` が古い順）で選び、`Sampled` という仮想 tagging の下に出す。サンプリングは提示順であって破棄ではない。
+- `last_surfaced` は既読化 API（`DELETE unread_entries`）を受けた時に前進させる。リーダーのスクロール既読がそのまま信号になる。
+- スパイク検証済みの結果: 素の時系列トップ 30 は 12 フィードに偏るが、サンプリングは 30 フィードに散る。last_surfaced 優先なら 10 セッションで全 278 フィードを巡回する。
+- 純粋関数の実装は `src/selection/select.ts` に残してある（配線なし）。
 
-## 実装で判明した制約（Foundation 実装・実データ疎通で判明）
+### その他
 
-- **D1: 1 文あたりバインド変数上限 ~100**。`WHERE id IN (?,?,…)` を 2000+ 未読 id で作ると `too many SQL variables` で落ちる。→ IN 句は必ず **チャンク（90/文）して db.batch**。選別エンジンでも同様に必須。
-- **Workers の global `fetch` は `this` 依存**。`const f = fetch; f(...)` のようにメソッド保持して呼ぶと `Illegal invocation`。→ 保持するなら `fetch.bind(globalThis)`。
-- **テストの盲点**: モック fetch 注入＋小さい id リストのユニットテストは、native fetch 経路・大量 id 経路を一度も踏まず、上記 2 バグを全通過させた。→ **現実的スケールの統合テスト**（syncAll を miniflare D1 で端から端まで）で補う。
-- **状態再構築の負荷**: `setUnreadFlags` は毎回 entries 全行を 0 リセット→未読分を 1。未読を捨てない方針では未読プールが単調増加するので、**全走査リセットは差分更新（`updated_entries`/`recently_read`）に置き換える必要**あり（Foundation は暫定実装）。
-
----
-
-## 保留中の仮定（実装時に検証）
-
-- Feedbin のレート制限（明記なし → `since` + 条件付きリクエストで回避、実測で確認）。
-- `entries.json` の `since` / `per_page` の詳細なページ挙動（実測）。
-- Tier 2 のサンプリング比率とアンチスタベーション閾値（要チューニング）。
-
----
-
-## 残す小論点
-
-1. Tier 2 の「1フィード上限（暫定3）」と「1セッションの尾の総枠（暫定30）」の初期値。回転周期＝アクティブフィード数÷総枠。
-2. アンチスタベーションの実装（feed ごとの last_surfaced をどこに持つか＝D1、更新タイミング）。
-3. Tier 1 に Must Read だけで足りるか、Engineering/Friends を足すか（実データで要判断）。
-4. フィードが複数フォルダに属する場合の Tier 判定ルール（例: Must Read があれば Tier 1 優先）。
-5. 手動掃除の逃避ボタンの具体（対象範囲・確認 UI）。
-6. スター/保存の記録方法（学習の餌としての持ち方）。
-7. 未読プール肥大への差分同期・retention の設計（Foundation の全走査を置換）。
+- 本文抽出: `/extract?url=` を linkedom + @mozilla/readability で実装し `extracted_content_url` に載せる。`src/sanitize.ts` を通す。
+- icons.json: favicon 取得。
+- PWA（`src/pwa`、`public/`）: 仮想タグで足りるなら削除。
