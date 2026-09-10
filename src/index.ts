@@ -3,8 +3,9 @@ import { crawlAllFeeds } from "./crawl/crawl";
 import { isBasicAuthorized, unauthorized } from "./api/auth";
 import { dispatch, type Route } from "./api/router";
 import { miscRoutes } from "./api/misc";
+import { entryRoutes } from "./api/entries";
 
-const apiRoutes: Route[] = [...miscRoutes];
+const apiRoutes: Route[] = [...miscRoutes, ...entryRoutes];
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
