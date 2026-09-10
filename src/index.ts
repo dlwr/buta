@@ -5,8 +5,9 @@ import { dispatch, type Route } from "./api/router";
 import { miscRoutes } from "./api/misc";
 import { entryRoutes } from "./api/entries";
 import { markRoutes } from "./api/marks";
+import { subscriptionRoutes } from "./api/subscriptions";
 
-const apiRoutes: Route[] = [...miscRoutes, ...entryRoutes, ...markRoutes];
+const apiRoutes: Route[] = [...miscRoutes, ...entryRoutes, ...markRoutes, ...subscriptionRoutes];
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
