@@ -5,7 +5,10 @@ import { fetchFeed } from "../feeds/fetch";
 import { parseFeedDocument, type ParsedFeed } from "../feeds/parse";
 import { mapWithConcurrency } from "./concurrency";
 
-export interface CrawlDeps { db: D1Database; kv: KVNamespace; fetchFn: typeof fetch; now: () => string }
+export interface CrawlDeps {
+  db: D1Database; kv: KVNamespace; fetchFn: typeof fetch; now: () => string;
+  feedDeadlineMs?: number;
+}
 export interface CrawlSummary { fetched: number; notModified: number; skipped: number; failed: number; newEntries: number }
 export interface FeedCrawlResult { outcome: "fetched" | "not-modified" | "failed"; newEntries: number }
 
@@ -14,6 +17,7 @@ const LOCK_TTL_SECONDS = 600;
 const CONCURRENCY = 20;
 const BASE_INTERVAL_MS = 15 * 60_000;
 const MAX_BACKOFF_STEPS = 8;
+const FEED_DEADLINE_MS = 45_000;
 
 export function isInBackoff(feed: FeedRow, nowMs: number): boolean {
   if (feed.error_count === 0 || feed.last_fetched_at === null) return false;
@@ -47,6 +51,18 @@ export async function crawlAllFeeds(deps: CrawlDeps): Promise<CrawlSummary | nul
 
 export async function crawlFeed(deps: CrawlDeps, feed: FeedRow): Promise<FeedCrawlResult> {
   const fetchedAt = deps.now();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), deps.feedDeadlineMs ?? FEED_DEADLINE_MS);
+  });
+  const outcome = await Promise.race([crawlFeedUnbounded(deps, feed, fetchedAt), deadline]);
+  clearTimeout(timer);
+  if (outcome !== "timeout") return outcome;
+  await recordFetchFailure(deps.db, feed.id, { message: "timeout", fetchedAt });
+  return { outcome: "failed", newEntries: 0 };
+}
+
+async function crawlFeedUnbounded(deps: CrawlDeps, feed: FeedRow, fetchedAt: string): Promise<FeedCrawlResult> {
   const res = await fetchFeed(
     { feedUrl: feed.feed_url, etag: feed.etag, lastModified: feed.last_modified }, deps.fetchFn,
   );

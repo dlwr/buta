@@ -111,3 +111,13 @@ describe("crawlAllFeeds", () => {
     expect(await env.SYNC_KV.get(CRAWL_LOCK_KEY)).toBeNull();
   });
 });
+
+describe("crawlFeed deadline", () => {
+  it("records a timeout failure when the fetch never settles", async () => {
+    const feed = await insertFeed(env.DB, feedInput("https://ex.com/hang"));
+    const never = (() => new Promise<Response>(() => {})) as unknown as typeof fetch;
+    const r = await crawlFeed({ ...deps(never), feedDeadlineMs: 20 }, feed);
+    expect(r.outcome).toBe("failed");
+    expect((await getFeed(env.DB, feed.id))?.last_error).toBe("timeout");
+  });
+});
