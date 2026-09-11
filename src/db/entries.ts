@@ -46,13 +46,20 @@ export async function queryEntries(
   const params: unknown[] = [];
   if (q.since !== undefined) { where.push("e.created_at > ?"); params.push(q.since); }
   if (q.feedId !== undefined) { where.push("e.feed_id = ?"); params.push(q.feedId); }
-  if (q.ids !== undefined) {
-    if (q.ids.length === 0) return { rows: [], total: 0 };
-    where.push(`e.id IN (${q.ids.map(() => "?").join(",")})`);
-    params.push(...q.ids);
-  }
   if (q.onlyUnread) where.push("e.id IN (SELECT entry_id FROM unread_entries)");
   if (q.onlyStarred) where.push("e.id IN (SELECT entry_id FROM starred_entries)");
+
+  // An explicit id list is at most one page and uses the whole bound-parameter
+  // budget (100), so it is fetched without COUNT/LIMIT/OFFSET parameters.
+  if (q.ids !== undefined) {
+    if (q.ids.length === 0 || q.page > 1) return { rows: [], total: q.ids.length };
+    where.push(`e.id IN (${q.ids.map(() => "?").join(",")})`);
+    params.push(...q.ids);
+    const { results } = await db.prepare(
+      `SELECT e.* FROM entries e WHERE ${where.join(" AND ")} ORDER BY e.created_at DESC, e.id DESC`,
+    ).bind(...params).all<EntryRow>();
+    return { rows: results, total: results.length };
+  }
   const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
 
   const [count, page] = await db.batch([

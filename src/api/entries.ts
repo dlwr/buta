@@ -3,7 +3,7 @@ import { route, json, type RouteContext } from "./router";
 import { serializeEntry, linksHeader } from "./serialize";
 
 const MAX_PER_PAGE = 100;
-const MAX_IDS = 90;
+const MAX_IDS = 100;
 
 function parseQuery(url: URL, feedId?: number): EntryQuery {
   const page = Math.max(1, Number(url.searchParams.get("page") ?? "1") || 1);

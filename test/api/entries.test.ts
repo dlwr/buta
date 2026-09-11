@@ -95,3 +95,15 @@ describe("GET /v2/entries/:id.json", () => {
     expect((await call("/v2/entries/999999.json")).status).toBe(404);
   });
 });
+
+describe("GET /v2/entries.json?ids= with 100 ids", () => {
+  it("returns all 100 requested entries (Capy chunks missing ids by 100)", async () => {
+    const many = await insertNewEntries(env.DB, Array.from({ length: 100 }, (_, i) => ({
+      feedId, dedupKey: `m${i}`, title: `m${i}`, url: null, author: null, summary: null, content: null,
+      published: "2026-08-01T00:00:00.000Z", createdAt: "2026-08-01T00:00:00.000Z",
+    })));
+    const res = await call(`/v2/entries.json?ids=${many.join(",")}&per_page=100&page=1&mode=extended`);
+    expect(res.status).toBe(200);
+    expect((await res.json() as unknown[]).length).toBe(100);
+  });
+});
