@@ -35,9 +35,11 @@ function serializeItem(row: EntryWithState, labels: string[]) {
     crawlTimeMsec: String(crawledMs),
     timestampUsec: String(crawledMs * 1000),
     published, updated: published,
-    title: row.title, author: row.author,
+    title: row.title ?? "", author: row.author,
     summary: { direction: "ltr", content: row.content ?? row.summary ?? "" },
+    ...(row.content !== null ? { content: { direction: "ltr", content: row.content } } : {}),
     alternate: row.url ? [{ href: row.url, type: "text/html" }] : [],
+    canonical: row.url ? [{ href: row.url }] : [],
     categories,
     origin: { streamId: `feed/${row.feed_id}`, title: row.feed_title, htmlUrl: row.feed_site_url ?? "" },
   };

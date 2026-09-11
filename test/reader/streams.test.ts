@@ -75,7 +75,9 @@ describe("POST /reader/api/0/stream/items/contents", () => {
       updated: Math.floor(Date.parse("2026-09-02T00:00:00.000Z") / 1000),
       title: "b", author: "au",
       summary: { direction: "ltr", content: "<p>b</p>" },
+      content: { direction: "ltr", content: "<p>b</p>" },
       alternate: [{ href: "https://a/b", type: "text/html" }],
+      canonical: [{ href: "https://a/b" }],
       categories: [LIST, READ, STARRED, "user/-/label/News"],
       origin: { streamId: `feed/${f1}`, title: "One", htmlUrl: "https://a/" },
     });
@@ -84,6 +86,15 @@ describe("POST /reader/api/0/stream/items/contents", () => {
     const res = await readerPost("/reader/api/0/stream/items/contents", { i: String(ids[0]) });
     expect((await res.json() as { items: unknown[] }).items).toHaveLength(1);
   });
+  it("never returns a null title or a missing content block (Capy requires both fields)", async () => {
+    const [id] = await insertNewEntries(env.DB, [{ feedId: f1, dedupKey: "nt", title: null, url: null, author: null, summary: "s", content: null, published: "t", createdAt: "t" }]);
+    const res = await readerPost("/reader/api/0/stream/items/contents", { i: String(id) });
+    const item = (await res.json() as { items: Record<string, unknown>[] }).items[0]!;
+    expect(item.title).toBe("");
+    expect(item.content).toBeUndefined();
+    expect(item.canonical).toEqual([]);
+  });
+
   it("falls back to summary when content is empty", async () => {
     const [id] = await insertNewEntries(env.DB, [{ feedId: f1, dedupKey: "s", title: "s", url: null, author: null, summary: "only summary", content: null, published: "t", createdAt: "t" }]);
     const res = await readerPost("/reader/api/0/stream/items/contents", { i: String(id) });
