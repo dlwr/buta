@@ -1,5 +1,5 @@
 import { listFeeds, recordFetchSuccess, recordFetchFailure, type FeedRow } from "../db/feeds";
-import { insertNewEntries, type NewEntry } from "../db/entries";
+import { insertNewEntries, findExistingDedupKeys, type NewEntry } from "../db/entries";
 import { addMarks } from "../db/marks";
 import { fetchFeed } from "../feeds/fetch";
 import { parseFeedDocument, type ParsedFeed } from "../feeds/parse";
@@ -81,7 +81,10 @@ async function crawlFeedUnbounded(deps: CrawlDeps, feed: FeedRow, fetchedAt: str
     await recordFetchFailure(deps.db, feed.id, { message: `parse: ${e instanceof Error ? e.message : String(e)}`, fetchedAt });
     return { outcome: "failed", newEntries: 0 };
   }
-  const entries: NewEntry[] = parsed.items.map((item) => ({
+  // D1 bills an INSERT OR IGNORE that hits the UNIQUE index as a row written,
+  // so already-stored items are filtered out with a read first.
+  const known = await findExistingDedupKeys(deps.db, feed.id, parsed.items.map((i) => i.dedupKey));
+  const entries: NewEntry[] = parsed.items.filter((item) => !known.has(item.dedupKey)).map((item) => ({
     feedId: feed.id, dedupKey: item.dedupKey, title: item.title, url: item.url, author: item.author,
     summary: item.summary, content: item.content, published: item.published ?? fetchedAt, createdAt: fetchedAt,
   }));

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { env } from "cloudflare:test";
 import { insertFeed } from "../../src/db/feeds";
-import { insertNewEntries, queryEntries, getEntry, findEntryIdsByUrls, type NewEntry } from "../../src/db/entries";
+import { insertNewEntries, queryEntries, getEntry, findEntryIdsByUrls, findExistingDedupKeys, type NewEntry } from "../../src/db/entries";
 import { addMarks } from "../../src/db/marks";
 
 let feedId: number;
@@ -97,5 +97,19 @@ describe("findEntryIdsByUrls", () => {
 
   it("returns an empty map for no urls", async () => {
     expect((await findEntryIdsByUrls(env.DB, [])).size).toBe(0);
+  });
+});
+
+describe("findExistingDedupKeys", () => {
+  it("returns only the keys already stored for that feed", async () => {
+    await insertNewEntries(env.DB, [entry("a", "t1"), entry("b", "t2")]);
+    const other = await insertFeed(env.DB, { feedUrl: "https://b/feed", siteUrl: null, title: "B", createdAt: "t" });
+    await insertNewEntries(env.DB, [entry("c", "t3", { feedId: other.id })]);
+    const found = await findExistingDedupKeys(env.DB, feedId, ["a", "b", "c", "zzz"]);
+    expect([...found].sort()).toEqual(["a", "b"]);
+  });
+
+  it("returns an empty set for no keys", async () => {
+    expect((await findExistingDedupKeys(env.DB, feedId, [])).size).toBe(0);
   });
 });

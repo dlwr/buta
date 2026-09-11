@@ -121,3 +121,14 @@ export async function getEntriesWithState(db: D1Database, ids: number[]): Promis
   }
   return ids.flatMap((id) => { const r = byId.get(id); return r ? [r] : []; });
 }
+
+export async function findExistingDedupKeys(db: D1Database, feedId: number, keys: string[]): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const part of chunk(keys)) {
+    const { results } = await db.prepare(
+      `SELECT dedup_key FROM entries WHERE feed_id = ? AND dedup_key IN (${part.map(() => "?").join(",")})`,
+    ).bind(feedId, ...part).all<{ dedup_key: string }>();
+    for (const r of results) out.add(r.dedup_key);
+  }
+  return out;
+}

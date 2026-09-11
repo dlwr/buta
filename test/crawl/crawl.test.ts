@@ -121,3 +121,13 @@ describe("crawlFeed deadline", () => {
     expect((await getFeed(env.DB, feed.id))?.last_error).toBe("timeout");
   });
 });
+
+describe("crawlFeed insert filtering", () => {
+  it("inserts only the items not already stored when a feed partially overlaps", async () => {
+    const feed = await insertFeed(env.DB, feedInput("https://ex.com/feed"));
+    await crawlFeed(deps(fetchWith({ "https://ex.com/feed": () => new Response(RSS(item("a"))) })), feed);
+    const r = await crawlFeed(deps(fetchWith({ "https://ex.com/feed": () => new Response(RSS(item("a") + item("b"))) })), feed);
+    expect(r.newEntries).toBe(1);
+    expect(await listMarked(env.DB, "unread_entries")).toHaveLength(2);
+  });
+});
