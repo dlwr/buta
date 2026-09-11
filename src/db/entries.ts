@@ -98,13 +98,13 @@ export async function listEntryIds(
   return { ids: ids.slice(0, q.limit), hasMore: ids.length > q.limit };
 }
 
-export interface EntryWithState extends EntryRow { feed_title: string; is_unread: number; is_starred: number }
+export interface EntryWithState extends EntryRow { feed_title: string; feed_site_url: string | null; is_unread: number; is_starred: number }
 
 export async function getEntriesWithState(db: D1Database, ids: number[]): Promise<EntryWithState[]> {
   const byId = new Map<number, EntryWithState>();
   for (const part of chunk(ids)) {
     const { results } = await db.prepare(
-      `SELECT e.*, f.title AS feed_title,
+      `SELECT e.*, f.title AS feed_title, f.site_url AS feed_site_url,
               EXISTS (SELECT 1 FROM unread_entries u WHERE u.entry_id = e.id) AS is_unread,
               EXISTS (SELECT 1 FROM starred_entries s WHERE s.entry_id = e.id) AS is_starred
        FROM entries e JOIN feeds f ON f.id = e.feed_id
