@@ -1,6 +1,6 @@
 # buta — 設計メモ
 
-自分専用の RSS バックエンド。フィードを自前でクロールし、Feedbin API v2 互換を喋る。クライアントは既製のリーダー（Android: Capy Reader、Mac: NetNewsWire / Reeder）。
+自分専用の RSS バックエンド。フィードを自前でクロールし、Feedbin API v2 互換と Google Reader API（FreshRSS 方言）の両方を喋る。クライアントは既製のリーダー（Android: Capy Reader は Feedbin として、Mac: NetNewsWire は FreshRSS として接続）。
 
 ---
 
@@ -20,6 +20,7 @@
 Cloudflare Worker
    - crawl: feedsmith で正規化 → D1 entries に INSERT OR IGNORE → unread_entries に追加
    - /v2/*: Feedbin API v2 互換（Basic 認証、単一ユーザー）
+   - /accounts/ClientLogin, /reader/api/0/*: Google Reader API 互換（NetNewsWire 用）
    - /admin/*: OPML 取り込み、手動クロール、旧データ引き継ぎ（Bearer）
    ↓
 既製リーダー（Capy Reader / NetNewsWire / Reeder）が Feedbin アカウントとして接続
@@ -67,9 +68,26 @@ Capy Reader のソースで確認した使用エンドポイントを実装。
 
 ---
 
+## Google Reader API 互換範囲
+
+NetNewsWire の Feedbin 連携は接続先が api.feedbin.com 固定でカスタム URL を受けないため、FreshRSS アカウントとして繋ぐ第二の顔。NetNewsWire の ReaderAPICaller で使用を確認したものだけ実装。
+
+- `POST /accounts/ClientLogin`（Email / Passwd）→ `Auth=<token>`。トークンは HMAC-SHA256(パスワード, "buta:auth:<email>") で状態を持たない。以降は `Authorization: GoogleLogin auth=<token>`。
+- `GET token` → 書き込み用トークン（HMAC の kind を "write" にしたもの）。書き込みは form の `T` で検証。
+- `GET tag/list`、`POST rename-tag`、`POST disable-tag`
+- `GET subscription/list`、`POST subscription/edit`（ac=edit: t / a / r、ac=unsubscribe）、`POST subscription/quickadd`
+- `GET stream/items/ids?s=&n=&ot=&xt=&c=`（s は reading-list / starred / feed/<id>、ot は created_at 基準、continuation は offset）
+- `POST stream/items/contents`（i=tag:google.com,2005:reader/item/<hex16> または 10 進）
+- `POST edit-tag`（a / r に read / starred）
+
+記事 ID は entries.id を 16 桁 hex にしたもの。NetNewsWire は hex → Int64 → 10 進文字列に戻して itemRefs の id と突き合わせるので、itemRefs は 10 進文字列で返す。
+
+---
+
 ## 運用
 
-- シークレット: `API_EMAIL` / `API_PASSWORD`（リーダーに入れる Basic 認証）、`ADMIN_TOKEN`（/admin）。
+- シークレット: `API_EMAIL` / `API_PASSWORD`（Feedbin 側は Basic 認証、Reader 側は ClientLogin。同じ値）、`ADMIN_TOKEN`（/admin）。
+- NetNewsWire: アカウント追加 → FreshRSS → API URL に `https://<worker>`、ユーザー名 / パスワードに API_EMAIL / API_PASSWORD。
 - 移行: Feedbin の OPML → `POST /admin/opml` → `POST /admin/crawl` → `POST /admin/migrate-legacy`（旧 `legacy_entries` と URL 照合して既読・スターを引き継ぐ）。
 - テスト: `@cloudflare/vitest-pool-workers` で D1 に migrations を適用して実 SQL を叩く。
 
