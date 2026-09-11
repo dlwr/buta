@@ -75,3 +75,42 @@ export async function findEntryIdsByUrls(db: D1Database, urls: string[]): Promis
   }
   return out;
 }
+
+export interface EntryIdQuery {
+  limit: number; offset: number; createdSince?: string; feedId?: number;
+  onlyUnread?: boolean; onlyStarred?: boolean;
+}
+
+export async function listEntryIds(
+  db: D1Database, q: EntryIdQuery,
+): Promise<{ ids: number[]; hasMore: boolean }> {
+  const where: string[] = [];
+  const params: unknown[] = [];
+  if (q.createdSince !== undefined) { where.push("created_at >= ?"); params.push(q.createdSince); }
+  if (q.feedId !== undefined) { where.push("feed_id = ?"); params.push(q.feedId); }
+  if (q.onlyUnread) where.push("id IN (SELECT entry_id FROM unread_entries)");
+  if (q.onlyStarred) where.push("id IN (SELECT entry_id FROM starred_entries)");
+  const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const { results } = await db.prepare(
+    `SELECT id FROM entries ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`,
+  ).bind(...params, q.limit + 1, q.offset).all<{ id: number }>();
+  const ids = results.map((r) => r.id);
+  return { ids: ids.slice(0, q.limit), hasMore: ids.length > q.limit };
+}
+
+export interface EntryWithState extends EntryRow { feed_title: string; is_unread: number; is_starred: number }
+
+export async function getEntriesWithState(db: D1Database, ids: number[]): Promise<EntryWithState[]> {
+  const byId = new Map<number, EntryWithState>();
+  for (const part of chunk(ids)) {
+    const { results } = await db.prepare(
+      `SELECT e.*, f.title AS feed_title,
+              EXISTS (SELECT 1 FROM unread_entries u WHERE u.entry_id = e.id) AS is_unread,
+              EXISTS (SELECT 1 FROM starred_entries s WHERE s.entry_id = e.id) AS is_starred
+       FROM entries e JOIN feeds f ON f.id = e.feed_id
+       WHERE e.id IN (${part.map(() => "?").join(",")})`,
+    ).bind(...part).all<EntryWithState>();
+    for (const r of results) byId.set(r.id, r);
+  }
+  return ids.flatMap((id) => { const r = byId.get(id); return r ? [r] : []; });
+}
