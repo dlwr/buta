@@ -41,4 +41,45 @@ describe("fetchFeed", () => {
     const r = await fetchFeed(input, fakeFetch(() => { throw new Error("dns"); }));
     expect(r).toEqual({ status: "error", message: "dns" });
   });
+
+  describe("charset decoding", () => {
+    const eucJp = (s: string) => Uint8Array.from(
+      { "にき": [0xa4, 0xcb, 0xa4, 0xad] }[s] ?? [...s].map((c) => c.charCodeAt(0)),
+    );
+    const concat = (...parts: Uint8Array[]) => {
+      const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
+      let i = 0;
+      for (const p of parts) { out.set(p, i); i += p.length; }
+      return out;
+    };
+    const textOf = async (body: Uint8Array, contentType: string) => {
+      const r = await fetchFeed(input, fakeFetch(() => new Response(body, { headers: { "Content-Type": contentType } })));
+      return r.status === "ok" ? r.text : null;
+    };
+
+    it("decodes using the encoding in the XML declaration when Content-Type has no charset", async () => {
+      const body = concat(eucJp('<?xml version="1.0" encoding="EUC-JP"?><rss><title>'), eucJp("にき"), eucJp("</title></rss>"));
+      expect(await textOf(body, "application/rdf+xml")).toContain("<title>にき</title>");
+    });
+
+    it("decodes using the meta charset of an HTML page", async () => {
+      const body = concat(eucJp('<html><head><meta http-equiv="Content-Type" content="text/html; charset=EUC-JP"><title>'), eucJp("にき"), eucJp("</title>"));
+      expect(await textOf(body, "text/html")).toContain("<title>にき</title>");
+    });
+
+    it("prefers the Content-Type charset over the XML declaration", async () => {
+      const body = concat(eucJp('<?xml version="1.0" encoding="UTF-8"?><title>'), eucJp("にき"), eucJp("</title>"));
+      expect(await textOf(body, "text/xml; charset=EUC-JP")).toContain("<title>にき</title>");
+    });
+
+    it("prefers a UTF-8 BOM over a conflicting Content-Type charset", async () => {
+      const body = concat(new Uint8Array([0xef, 0xbb, 0xbf]), new TextEncoder().encode("<title>にき</title>"));
+      expect(await textOf(body, "text/xml; charset=EUC-JP")).toBe("<title>にき</title>");
+    });
+
+    it("falls back to UTF-8 when the declared encoding is unknown", async () => {
+      const body = new TextEncoder().encode('<?xml version="1.0" encoding="x-bogus"?><title>にき</title>');
+      expect(await textOf(body, "text/xml")).toContain("<title>にき</title>");
+    });
+  });
 });
