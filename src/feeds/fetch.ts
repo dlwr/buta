@@ -21,11 +21,37 @@ export async function fetchFeed(input: FetchFeedInput, fetchFn: typeof fetch): P
     if (!res.ok) return { status: "error", message: `HTTP ${res.status}` };
     return {
       status: "ok",
-      text: await res.text(),
+      text: decodeBody(new Uint8Array(await res.arrayBuffer()), res.headers.get("Content-Type")),
       etag: res.headers.get("ETag"),
       lastModified: res.headers.get("Last-Modified"),
     };
   } catch (e) {
     return { status: "error", message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+function decodeBody(bytes: Uint8Array, contentType: string | null): string {
+  const label = bomEncoding(bytes)
+    ?? contentType?.match(/charset\s*=\s*["']?([\w.:-]+)/i)?.[1]
+    ?? declaredEncoding(bytes)
+    ?? "utf-8";
+  try {
+    return new TextDecoder(label).decode(bytes);
+  } catch {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
+}
+
+function bomEncoding(bytes: Uint8Array): string | null {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return "utf-8";
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return "utf-16be";
+  if (bytes[0] === 0xff && bytes[1] === 0xfe) return "utf-16le";
+  return null;
+}
+
+function declaredEncoding(bytes: Uint8Array): string | null {
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 1024));
+  return head.match(/^\s*<\?xml[^>]*encoding\s*=\s*["']([\w.:-]+)["']/)?.[1]
+    ?? head.match(/<meta[^>]+charset\s*=\s*["']?([\w.:-]+)/i)?.[1]
+    ?? null;
 }
