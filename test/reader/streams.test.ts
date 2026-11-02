@@ -95,6 +95,18 @@ describe("POST /reader/api/0/stream/items/contents", () => {
     expect(item.canonical).toEqual([]);
   });
 
+  it("reports crawl time as published when the feed dates the item more than 7 days before the crawl", async () => {
+    const [id] = await insertNewEntries(env.DB, [{ feedId: f1, dedupKey: "old", title: "old", url: null, author: null, summary: "s", content: null, published: "2012-03-18T07:00:00.000Z", createdAt: "2026-09-10T00:00:00.000Z" }]);
+    const res = await readerPost("/reader/api/0/stream/items/contents", { i: String(id) });
+    expect((await res.json() as { items: { published: number }[] }).items[0]?.published).toBe(Math.floor(Date.parse("2026-09-10T00:00:00.000Z") / 1000));
+  });
+
+  it("keeps the feed's published date within 7 days of the crawl", async () => {
+    const [id] = await insertNewEntries(env.DB, [{ feedId: f1, dedupKey: "recent", title: "recent", url: null, author: null, summary: "s", content: null, published: "2026-09-04T00:00:00.000Z", createdAt: "2026-09-10T00:00:00.000Z" }]);
+    const res = await readerPost("/reader/api/0/stream/items/contents", { i: String(id) });
+    expect((await res.json() as { items: { published: number }[] }).items[0]?.published).toBe(Math.floor(Date.parse("2026-09-04T00:00:00.000Z") / 1000));
+  });
+
   it("falls back to summary when content is empty", async () => {
     const [id] = await insertNewEntries(env.DB, [{ feedId: f1, dedupKey: "s", title: "s", url: null, author: null, summary: "only summary", content: null, published: "t", createdAt: "t" }]);
     const res = await readerPost("/reader/api/0/stream/items/contents", { i: String(id) });
