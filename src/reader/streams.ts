@@ -23,9 +23,14 @@ function idsQuery(url: URL): EntryIdQuery | null {
   return q;
 }
 
+// Capy discards read items published before its retention cutoff but keeps their status rows,
+// so it refetches backfilled or misdated items on every sync until the status row ages out.
+const MAX_PUBLISHED_LAG_MS = 7 * 24 * 60 * 60 * 1000;
+
 function serializeItem(row: EntryWithState, labels: string[]) {
   const crawledMs = Date.parse(row.created_at);
-  const published = Math.floor(Date.parse(row.published) / 1000);
+  const publishedMs = Date.parse(row.published);
+  const published = Math.floor((publishedMs < crawledMs - MAX_PUBLISHED_LAG_MS ? crawledMs : publishedMs) / 1000);
   const categories = [STREAM_READING_LIST];
   if (!row.is_unread) categories.push(STATE_READ);
   if (row.is_starred) categories.push(STATE_STARRED);
