@@ -41,4 +41,15 @@ describe("fetchFeed", () => {
     const r = await fetchFeed(input, fakeFetch(() => { throw new Error("dns"); }));
     expect(r).toEqual({ status: "error", message: "dns" });
   });
+  it("decodes the body with the charset from the XML declaration", async () => {
+    const body = new Uint8Array([...new TextEncoder().encode('<?xml version="1.0" encoding="EUC-JP"?><t>'), 0xc6, 0xfc, 0xb5, 0xad, ...new TextEncoder().encode("</t>")]);
+    const r = await fetchFeed(input, fakeFetch(() => new Response(body, { headers: { "Content-Type": "application/rdf+xml" } })));
+    expect(r.status === "ok" && r.text).toBe('<?xml version="1.0" encoding="EUC-JP"?><t>日記</t>');
+  });
+
+  it("prefers the charset from Content-Type over the XML declaration", async () => {
+    const body = new Uint8Array([...new TextEncoder().encode('<?xml version="1.0" encoding="UTF-8"?><t>'), 0x93, 0xfa, 0x8b, 0x4c, ...new TextEncoder().encode("</t>")]);
+    const r = await fetchFeed(input, fakeFetch(() => new Response(body, { headers: { "Content-Type": "text/xml; charset=Shift_JIS" } })));
+    expect(r.status === "ok" && r.text).toBe('<?xml version="1.0" encoding="UTF-8"?><t>日記</t>');
+  });
 });

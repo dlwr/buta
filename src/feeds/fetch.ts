@@ -21,11 +21,23 @@ export async function fetchFeed(input: FetchFeedInput, fetchFn: typeof fetch): P
     if (!res.ok) return { status: "error", message: `HTTP ${res.status}` };
     return {
       status: "ok",
-      text: await res.text(),
+      text: decodeBody(new Uint8Array(await res.arrayBuffer()), res.headers.get("Content-Type")),
       etag: res.headers.get("ETag"),
       lastModified: res.headers.get("Last-Modified"),
     };
   } catch (e) {
     return { status: "error", message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+function decodeBody(bytes: Uint8Array, contentType: string | null): string {
+  const head = new TextDecoder("latin1").decode(bytes.subarray(0, 200));
+  const charset = contentType?.match(/charset=["']?([\w-]+)/i)?.[1]
+    ?? head.match(/<\?xml[^>]*encoding=["']([\w-]+)/i)?.[1]
+    ?? "utf-8";
+  try {
+    return new TextDecoder(charset).decode(bytes);
+  } catch {
+    return new TextDecoder().decode(bytes);
   }
 }
