@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "triggers": { "crons": ["*/15 * * * *"] },
   "assets": { "directory": "./public" },
+  "observability": { "enabled": true },
   "d1_databases": [
     {
       "binding": "DB",
