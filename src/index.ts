@@ -38,22 +38,31 @@ async function handleAdmin(request: Request, env: Env, url: URL): Promise<Respon
   }
 }
 
+async function handleFetch(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  if (url.pathname === "/health") return Response.json({ ok: true });
+
+  if (url.pathname.startsWith("/v2/")) {
+    if (!isBasicAuthorized(request, env.API_EMAIL, env.API_PASSWORD)) return unauthorized();
+    return (await dispatch(apiRoutes, request, env)) ?? new Response("Not Found", { status: 404 });
+  }
+  if (request.method === "POST" && url.pathname === "/accounts/ClientLogin") return handleClientLogin(request, env);
+  if (url.pathname.startsWith("/reader/api/0/")) {
+    if (!(await isReaderAuthorized(request, env.API_EMAIL, env.API_PASSWORD))) return new Response("Unauthorized", { status: 401 });
+    return (await dispatch(readerRoutes, request, env)) ?? new Response("Not Found", { status: 404 });
+  }
+  if (url.pathname.startsWith("/admin/")) return handleAdmin(request, env, url);
+  return new Response("Not Found", { status: 404 });
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    if (url.pathname === "/health") return Response.json({ ok: true });
-
-    if (url.pathname.startsWith("/v2/")) {
-      if (!isBasicAuthorized(request, env.API_EMAIL, env.API_PASSWORD)) return unauthorized();
-      return (await dispatch(apiRoutes, request, env)) ?? new Response("Not Found", { status: 404 });
+    try {
+      return await handleFetch(request, env);
+    } catch (e) {
+      console.error(request.method, new URL(request.url).pathname, e);
+      return new Response(String(e), { status: 500 });
     }
-    if (request.method === "POST" && url.pathname === "/accounts/ClientLogin") return handleClientLogin(request, env);
-    if (url.pathname.startsWith("/reader/api/0/")) {
-      if (!(await isReaderAuthorized(request, env.API_EMAIL, env.API_PASSWORD))) return new Response("Unauthorized", { status: 401 });
-      return (await dispatch(readerRoutes, request, env)) ?? new Response("Not Found", { status: 404 });
-    }
-    if (url.pathname.startsWith("/admin/")) return handleAdmin(request, env, url);
-    return new Response("Not Found", { status: 404 });
   },
   async scheduled(_event: ScheduledController, env: Env): Promise<void> {
     const summary = await crawlAllFeeds(crawlDeps(env));
