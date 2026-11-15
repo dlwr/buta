@@ -31,6 +31,17 @@ describe("listEntryIds", () => {
     const r = await listEntryIds(env.DB, { limit: 10, offset: 0, createdSince: "2026-09-02T00:00:00.000Z" });
     expect(r.ids).toEqual([ids[2], ids[1]]);
   });
+  it("reads createdSince from the created_at index instead of scanning every row", async () => {
+    const seen: { sql: string; args: unknown[] }[] = [];
+    const spy = {
+      prepare: (sql: string) => ({
+        bind: (...args: unknown[]) => { seen.push({ sql, args }); return env.DB.prepare(sql).bind(...args); },
+      }),
+    } as unknown as D1Database;
+    await listEntryIds(spy, { limit: 10, offset: 0, createdSince: "2026-09-02T00:00:00.000Z" });
+    const { results } = await env.DB.prepare(`EXPLAIN QUERY PLAN ${seen[0]!.sql}`).bind(...seen[0]!.args).all<{ detail: string }>();
+    expect(results.map((r) => r.detail).join("\n")).toContain("USING COVERING INDEX idx_entries_created");
+  });
   it("filters by feedId", async () => {
     const r = await listEntryIds(env.DB, { limit: 10, offset: 0, feedId: f2 });
     expect(r.ids).toEqual([ids[2]]);

@@ -98,8 +98,10 @@ export async function listEntryIds(
   if (q.onlyUnread) where.push("id IN (SELECT entry_id FROM unread_entries)");
   if (q.onlyStarred) where.push("id IN (SELECT entry_id FROM starred_entries)");
   const clause = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  // Left alone, SQLite walks the table in id order for the ORDER BY and reads every row's content to reach created_at.
+  const index = q.createdSince !== undefined ? "INDEXED BY idx_entries_created" : "";
   const { results } = await db.prepare(
-    `SELECT id FROM entries ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`,
+    `SELECT id FROM entries ${index} ${clause} ORDER BY id DESC LIMIT ? OFFSET ?`,
   ).bind(...params, q.limit + 1, q.offset).all<{ id: number }>();
   const ids = results.map((r) => r.id);
   return { ids: ids.slice(0, q.limit), hasMore: ids.length > q.limit };
