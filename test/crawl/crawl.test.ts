@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { env } from "cloudflare:test";
 import { insertFeed, getFeed, recordFetchFailure } from "../../src/db/feeds";
 import { listMarked } from "../../src/db/marks";
-import { queryEntries } from "../../src/db/entries";
+import { queryEntries, insertNewEntries } from "../../src/db/entries";
 import { crawlAllFeeds, crawlFeed, CRAWL_LOCK_KEY } from "../../src/crawl/crawl";
 
 const RSS = (items: string) => `<?xml version="1.0"?><rss version="2.0"><channel><title>T</title><link>https://ex.com/</link>${items}</channel></rss>`;
@@ -83,7 +83,7 @@ describe("crawlAllFeeds", () => {
       "https://ex.com/1": () => new Response(RSS(item("a"))),
       "https://ex.com/2": () => new Response(null, { status: 304 }),
     })));
-    expect(s).toEqual({ fetched: 1, notModified: 1, skipped: 0, failed: 0, newEntries: 1 });
+    expect(s).toEqual({ fetched: 1, notModified: 1, skipped: 0, failed: 0, newEntries: 1, pruned: 0 });
   });
 
   it("skips a feed that failed recently, with backoff growing by error_count", async () => {
@@ -129,5 +129,71 @@ describe("crawlFeed insert filtering", () => {
     const r = await crawlFeed(deps(fetchWith({ "https://ex.com/feed": () => new Response(RSS(item("a") + item("b"))) })), feed);
     expect(r.newEntries).toBe(1);
     expect(await listMarked(env.DB, "unread_entries")).toHaveLength(2);
+  });
+});
+
+describe("crawlAllFeeds pruning", () => {
+  const OLD = "2026-06-01T00:00:00.000Z";
+  const RECENT = "2026-08-01T00:00:00.000Z";
+
+  async function feedWithReadEntry(key: string, createdAt: string): Promise<void> {
+    const feed = await insertFeed(env.DB, feedInput("https://ex.com/feed"));
+    await insertNewEntries(env.DB, [{
+      feedId: feed.id, dedupKey: key, title: key, url: null, author: null, summary: null, content: null, published: createdAt, createdAt,
+    }]);
+  }
+  async function storedKeys(): Promise<string[]> {
+    const { results } = await env.DB.prepare("SELECT dedup_key FROM entries ORDER BY dedup_key").all<{ dedup_key: string }>();
+    return results.map((r) => r.dedup_key);
+  }
+  const serving = (body: () => Response) => deps(fetchWith({ "https://ex.com/feed": body }));
+
+  it("deletes a read entry older than 90 days that the feed no longer lists", async () => {
+    await feedWithReadEntry("gone", OLD);
+    await crawlAllFeeds(serving(() => new Response(RSS(item("a")))));
+    expect(await storedKeys()).toEqual(["a"]);
+  });
+
+  it("counts deleted entries in the summary", async () => {
+    await feedWithReadEntry("gone", OLD);
+    const s = await crawlAllFeeds(serving(() => new Response(RSS(item("a")))));
+    expect(s?.pruned).toBe(1);
+  });
+
+  it("keeps an old entry the feed still lists", async () => {
+    await feedWithReadEntry("kept", OLD);
+    await crawlAllFeeds(serving(() => new Response(RSS(item("kept") + item("a")))));
+    expect(await storedKeys()).toEqual(["a", "kept"]);
+  });
+
+  it("keeps an entry younger than 90 days", async () => {
+    await feedWithReadEntry("young", RECENT);
+    await crawlAllFeeds(serving(() => new Response(RSS(item("a")))));
+    expect(await storedKeys()).toEqual(["a", "young"]);
+  });
+
+  it("does not prune when the feed document has no items", async () => {
+    await feedWithReadEntry("gone", OLD);
+    await crawlAllFeeds(serving(() => new Response(RSS(""))));
+    expect(await storedKeys()).toEqual(["gone"]);
+  });
+
+  it("does not prune on 304", async () => {
+    await feedWithReadEntry("gone", OLD);
+    await crawlAllFeeds(serving(() => new Response(null, { status: 304 })));
+    expect(await storedKeys()).toEqual(["gone"]);
+  });
+
+  it("still counts the feed as fetched when pruning fails", async () => {
+    await feedWithReadEntry("gone", OLD);
+    const db = {
+      prepare: (sql: string) => {
+        if (sql.startsWith("DELETE FROM entries")) throw new Error("D1_ERROR: D1 DB is overloaded.");
+        return env.DB.prepare(sql);
+      },
+      batch: (stmts: D1PreparedStatement[]) => env.DB.batch(stmts),
+    } as unknown as D1Database;
+    const s = await crawlAllFeeds({ ...serving(() => new Response(RSS(item("a")))), db });
+    expect(s?.fetched).toBe(1);
   });
 });
