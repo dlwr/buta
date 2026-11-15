@@ -134,3 +134,28 @@ export async function findExistingDedupKeys(db: D1Database, feedId: number, keys
   }
   return out;
 }
+
+export async function findPruneBoundaryId(db: D1Database, createdBefore: string): Promise<number | null> {
+  const row = await db.prepare(
+    `SELECT id FROM entries INDEXED BY idx_entries_created
+     WHERE created_at < ? ORDER BY created_at DESC, id DESC LIMIT 1`,
+  ).bind(createdBefore).first<{ id: number }>();
+  return row?.id ?? null;
+}
+
+// Age is judged by id, not created_at: created_at sits behind the content columns,
+// so filtering on it would read every candidate row's content.
+export async function pruneFeedEntries(
+  db: D1Database, feedId: number, upToId: number, listedKeys: string[], limit: number,
+): Promise<number> {
+  const r = await db.prepare(
+    `DELETE FROM entries WHERE id IN (
+       SELECT id FROM entries
+       WHERE feed_id = ? AND id <= ?
+         AND dedup_key NOT IN (SELECT value FROM json_each(?))
+         AND id NOT IN (SELECT entry_id FROM unread_entries)
+         AND id NOT IN (SELECT entry_id FROM starred_entries)
+       LIMIT ?)`,
+  ).bind(feedId, upToId, JSON.stringify(listedKeys), limit).run();
+  return r.meta.changes;
+}

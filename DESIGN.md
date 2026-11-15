@@ -37,7 +37,7 @@ Cloudflare Worker
 - `entries`: `UNIQUE(feed_id, dedup_key)`。dedup_key は guid → url → `title|published` の順。`published` は非 null（無ければクロール時刻）。
 - `unread_entries` / `starred_entries`: entry_id だけの集合。
 - `taggings`: フォルダ。`UNIQUE(feed_id, name)`。
-- 削除は feeds → entries → marks に CASCADE。entries は自動では消さない（未読の自動破棄禁止は継続）。
+- 削除は feeds → entries → marks に CASCADE。entries はクロール時に「既読・スター無し・取得から 90 日超・フィード本体にもう載っていない」ものだけ消す（未読の自動破棄禁止は継続）。フィードに載っているうちは消さない。消すと次のクロールで新着・未読として入り直す。
 
 ---
 
